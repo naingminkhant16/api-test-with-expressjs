@@ -21,12 +21,20 @@ app.use(bodyParser.urlencoded({
 }));
 app.use(bodyParser.json());
 
+//CORS
+app.use(function (req, res, next) {
+    res.append("Access-Control-Allow-Origin", "*");
+    res.append("Access-Control-Allow-Methods", "*");
+    res.append("Access-Control-Allow-Headers", "*");
+    next();
+});
+
 //routes
 // const routes = require('./routes');
 // app.use("/api", routes);
 
 //GET
-app.get("/api/records", function (req, res) {
+app.get("/api/records", auth, function (req, res) {
     const options = req.query;
 
     const sort = options.sort || {};
@@ -176,7 +184,7 @@ app.patch('/api/records/:id', [param('id').isMongoId()], function (req, res) {
 })
 
 //DELETE
-app.delete("/api/records/:id", function (req, res) {
+app.delete("/api/records/:id", auth, onlyAdmin, function (req, res) {
     const _id = req.params.id;
 
     db.records.count({
@@ -195,32 +203,96 @@ app.delete("/api/records/:id", function (req, res) {
 });
 
 //SHOW 
-app.get('/api/records/:id', [
-    param('id').isMongoId()
-], function (req, res) {
-    const _id = req.params.id;
+// app.get('/api/records/:id', [
+//     param('id').isMongoId()
+// ], function (req, res) {
+//     const _id = req.params.id;
 
-    db.records.find({
-        _id: mongojs.ObjectID(_id)
-    }, function (any, data) {
+//     db.records.find({
+//         _id: mongojs.ObjectID(_id)
+//     }, function (data) {
 
-        //need to handle errors
-        return res.status(200).json({
-            meta: {
-                _id
-            },
-            data,
-            links: {
-                self: req.originalUrl
-            }
-        })
+//         //need to handle errors
+//         return res.status(200).json({
+//             meta: {
+//                 _id
+//             },
+//             data,
+//             links: {
+//                 self: req.originalUrl
+//             }
+//         })
+//     });
+// });
+
+
+//JWT
+const jwt = require('jsonwebtoken');
+const secret = "Minatozaki Sana";
+
+const users = [{
+        username: "Momo",
+        password: "password",
+        role: "user"
+    },
+    {
+        username: "Thar Khant",
+        password: "password",
+        role: "admin"
+    }
+];
+
+app.post("/api/login", function (req, res) {
+    const {
+        username,
+        password
+    } = req.body;
+
+    const user = users.find(function (u) {
+        return u.username === username && u.password === password;
     });
-});
-//test
-app.get('/test', function (req, res) {
-    return res.json(req.query);
+
+    if (user) {
+        jwt.sign(user, secret, {
+            expiresIn: "1h"
+        }, function (err, token) {
+            return res.status(200).json({
+                token
+            });
+        });
+    } else {
+        return res.sendStatus(401);
+    }
 });
 
+
+//check auth token
+function auth(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) return res.sendStatus(401);
+
+    const [
+        type,
+        token
+    ] = authHeader.split(" ");
+
+    if (type !== "Bearer") return res.sendStatus(401);
+
+    jwt.verify(token, secret, function (err, data) {
+        if (err) return res.sendStatus(401);
+        else next();
+    });
+}
+
+//check authorization
+function onlyAdmin(req, res, next) {
+    const [type, token] = res.headers["authorization"].split(' ');
+
+    jwt.verify(token, secret, function (err, user) {
+        if (user.role === "admin") next();
+        else return res.sendStatus(403);
+    })
+}
 
 app.listen(8000, function () {
     console.log("Sever is running at port 8000...");
